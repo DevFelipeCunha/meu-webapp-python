@@ -10,8 +10,8 @@ st.write("Sincronizado em tempo real com o Google Sheets. Funciona em Smartphone
 
 # ================= CONEXÃO COM O GOOGLE SHEETS =================
 # Cole aqui a URL de compartilhamento da sua planilha (aquela que configuramos como EDITOR)
-URL_PLANILHA = "https://docs.google.com/spreadsheets/d/1aDOYJWNtb5lE183WoCJGMZae_OMyttRf7yK9WCa3ibQ/edit?gid=0#gid=0
-"
+URL_PLANILHA = https://docs.google.com/spreadsheets/d/1aDOYJWNtb5lE183WoCJGMZae_OMyttRf7yK9WCa3ibQ/edit?gid=0#gid=0
+
 
 # Inicializa a conexão oficial do Streamlit com o Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
