@@ -4,10 +4,10 @@ import requests
 import json
 
 # 1. CONFIGURAÇÃO DA PÁGINA (Deve ser o primeiro comando Streamlit)
-st.set_page_config(page_title="Centro de Custo", page_icon="🏠", layout="wide")
+st.set_page_config(page_title="Planejador de Ambientes", page_icon="🏠", layout="wide")
 
-st.title("📋 Nosso Planejamento Fe+Tha")
-st.write("Foco no Foco")
+st.title("📋 Planejador Compartilhado: Balanço de Bens & Compras Futuras")
+st.write("Sincronizado em tempo real. Edite pelo smartphone, tablet ou desktop!")
 
 # ==================== CONFIGURAÇÃO DAS URLs ====================
 # Cole o link normal da sua planilha do Google (onde você visualiza os dados)
@@ -25,6 +25,10 @@ def carregar_dados_sheets():
         dados = pd.read_csv(url_csv)
         if dados.empty:
             return pd.DataFrame(columns=["Item", "Categoria", "Status", "Prioridade", "Valor (R$)"])
+        
+        # Padroniza dados antigos na planilha para os novos nomes se necessário
+        if "Status" in dados.columns:
+            dados["Status"] = dados["Status"].replace({"Já Possuo": "Já Temos", "Desejo Futuro": "Queremos"})
         return dados
     except Exception as e:
         return pd.DataFrame(columns=["Item", "Categoria", "Status", "Prioridade", "Valor (R$)"])
@@ -55,7 +59,7 @@ st.sidebar.header("➕ Cadastrar Novo Item")
 with st.sidebar.form(key="form_cadastro", clear_on_submit=True):
     nome_item = st.text_input("Nome do Item:", placeholder="Ex: Sofá, Geladeira...")
     categoria = st.selectbox("Cômodo / Categoria:", ["Sala", "Cozinha", "Banheiro", "Quarto", "Geral"])
-    status = st.radio("Status Atual:", ["Já Possuo", "Desejo Futuro"])
+    status = st.radio("Status Atual:", ["Já Temos", "Queremos"])
     prioridade = st.selectbox("Prioridade:", ["Alta", "Média", "Baixa"])
     valor = st.number_input("Valor Estimado (R$):", min_value=0.0, step=50.0, value=0.0)
     botao_salvar = st.form_submit_button("Salvar Item")
@@ -65,7 +69,7 @@ if botao_salvar and nome_item:
         "Item": nome_item,
         "Categoria": categoria,
         "Status": status,
-        "Prioridade": prioridade if status == "Desejo Futuro" else "N/A",
+        "Prioridade": prioridade if status == "Queremos" else "N/A",
         "Valor (R$)": valor
     }])
     df_novo = pd.concat([df, novo_item], ignore_index=True)
@@ -80,11 +84,11 @@ if botao_salvar and nome_item:
 
 # 3. PAINEL DE INDICADORES (DASHBOARD)
 if not df.empty:
-    total_possuo = df[df["Status"] == "Já Possuo"]["Valor (R$)"].sum()
-    total_desejo = df[df["Status"] == "Desejo Futuro"]["Valor (R$)"].sum()
+    total_possuo = df[df["Status"] == "Já Temos"]["Valor (R$)"].sum()
+    total_desejo = df[df["Status"] == "Queremos"]["Valor (R$)"].sum()
     total_geral = df["Valor (R$)"].sum()
     
-    qtd_possuo = len(df[df["Status"] == "Já Possuo"])
+    qtd_possuo = len(df[df["Status"] == "Já Temos"])
     qtd_total = len(df)
     porcentagem_concluida = (qtd_possuo / qtd_total) if qtd_total > 0 else 0
 
@@ -98,48 +102,84 @@ if not df.empty:
     st.progress(porcentagem_concluida)
     st.divider()
 
-    # ==================== SEÇÃO DE GRÁFICOS (RETORNADA) ====================
+    # SEÇÃO DE GRÁFICOS
     with st.expander("📊 Clique aqui para abrir os Gráficos do Projeto", expanded=False):
         col_graf1, col_graf2 = st.columns(2)
-        
         with col_graf1:
             st.markdown("**Valores Totais Acumulados por Cômodo (R$)**")
             df_gasto_comodo = df.groupby("Categoria")["Valor (R$)"].sum()
             st.bar_chart(df_gasto_comodo, color="#2E8B57")
-            
         with col_graf2:
             st.markdown("**Resumo de Itens Cadastrados**")
             df_status_qtd = df.groupby("Status").size().reset_index(name="Quantidade")
             st.dataframe(df_status_qtd, use_container_width=True, hide_index=True)
-            
             valor_medio = df["Valor (R$)"].mean()
             st.info(f"💡 Custo médio estimado por item na sua lista: **R$ {valor_medio:,.2f}**")
 
     st.divider()
-    # =======================================================================
 
-    # 4. GERENCIADOR ESTILO EXCEL COM AUTO-SALVAMENTO
+    # 4. GERENCIADOR DIVIDIDO EM ABAS COM OS NOVOS TERMOS
     st.markdown("### ✏️ Visualizar e Modificar Lista Geral")
-    st.caption("Qualquer alteração feita nas células abaixo será salva na planilha do Google assim que você clicar fora da tabela.")
     
     config_colunas = {
         "Categoria": st.column_config.SelectboxColumn("Cômodo", options=["Sala", "Cozinha", "Banheiro", "Quarto", "Geral"], required=True),
-        "Status": st.column_config.SelectboxColumn("Status", options=["Já Possuo", "Desejo Futuro"], required=True),
+        "Status": st.column_config.SelectboxColumn("Status", options=["Já Temos", "Queremos"], required=True),
         "Prioridade": st.column_config.SelectboxColumn("Prioridade", options=["Alta", "Média", "Baixa", "N/A"]),
         "Valor (R$)": st.column_config.NumberColumn("Valor (R$)", min_value=0, format="R$ %.2f")
     }
 
-    df_editado = st.data_editor(df, use_container_width=True, num_rows="dynamic", column_config=config_colunas, key="editor_bens")
+    # Criando as abas personalizadas
+    aba_geral, aba_possuo, aba_desejo = st.tabs(["🌐 Lista Geral", "💰 Já Temos", "🎯 Queremos"])
 
-    # Se houver edição direta na tabela na tela, dispara o salvamento automático no Google
-    if not df_editado.equals(df):
-        with st.spinner("Sincronizando alterações com o Google..."):
-            if salvar_dados_sheets(df_editado):
-                st.session_state.meus_itens = df_editado
-                st.toast("Planilha Google updated!", icon="☁️")
-                st.rerun()
-            else:
-                st.error("Falha ao sincronizar edições automáticas.")
+    # --- ABA 1: LISTA GERAL ---
+    with aba_geral:
+        st.caption("Visão completa de todos os itens. Altere cômodos, preços ou o status ('Já Temos' / 'Queremos') aqui.")
+        df_editado_geral = st.data_editor(df, use_container_width=True, num_rows="dynamic", column_config=config_colunas, key="editor_geral")
+        
+        if not df_editado_geral.equals(df):
+            with st.spinner("Sincronizando Lista Geral com o Google..."):
+                if salvar_dados_sheets(df_editado_geral):
+                    st.session_state.meus_itens = df_editado_geral
+                    st.toast("Planilha Google atualizada!", icon="☁️")
+                    st.rerun()
+
+    # --- ABA 2: JÁ TEMOS ---
+    with aba_possuo:
+        st.caption("Itens que vocês já possuem garantidos para os ambientes.")
+        df_possuo = df[df["Status"] == "Já Temos"]
+        
+        if not df_possuo.empty:
+            df_editado_possuo = st.data_editor(df_possuo, use_container_width=True, num_rows="fixed", column_config=config_colunas, key="editor_possuo")
+            
+            if not df_editado_possuo.equals(df_possuo):
+                df_resto = df[df["Status"] != "Já Temos"]
+                df_combinado = pd.concat([df_resto, df_editado_possuo], ignore_index=True)
+                with st.spinner("Atualizando lista com itens salvos..."):
+                    if salvar_dados_sheets(df_combinado):
+                        st.session_state.meus_itens = df_combinado
+                        st.toast("Alterações salvas!", icon="☁️")
+                        st.rerun()
+        else:
+            st.info("Nenhum item marcado como 'Já Temos' ainda.")
+
+    # --- ABA 3: QUEREMOS ---
+    with aba_desejo:
+        st.caption("Sua lista de desejos futuros e próximas metas de compra.")
+        df_desejo = df[df["Status"] == "Queremos"]
+        
+        if not df_desejo.empty:
+            df_editado_desejo = st.data_editor(df_desejo, use_container_width=True, num_rows="fixed", column_config=config_colunas, key="editor_desejo")
+            
+            if not df_editado_desejo.equals(df_desejo):
+                df_resto = df[df["Status"] != "Queremos"]
+                df_combinado = pd.concat([df_resto, df_editado_desejo], ignore_index=True)
+                with st.spinner("Sincronizando metas com o Google..."):
+                    if salvar_dados_sheets(df_combinado):
+                        st.session_state.meus_itens = df_combinado
+                        st.toast("Lista de desejos atualizada!", icon="☁️")
+                        st.rerun()
+        else:
+            st.info("Nenhum item adicionado na lista 'Queremos' por enquanto.")
 
     st.divider()
     
