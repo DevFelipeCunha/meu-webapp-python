@@ -4,10 +4,10 @@ import requests
 import json
 
 # 1. CONFIGURAÇÃO DA PÁGINA (Deve ser o primeiro comando Streamlit)
-st.set_page_config(page_title="Planejador de Ambientes", page_icon="🏠", layout="wide")
+st.set_page_config(page_title="Centro de Custo", page_icon="🏠", layout="wide")
 
-st.title("📋 Planejador Compartilhado: Balanço de Bens & Compras Futuras")
-st.write("Sincronizado em tempo real. Edite pelo smartphone, tablet ou desktop!")
+st.title("📋 Nosso Planejamento Fe+Tha")
+st.write("Foco no Foco")
 
 # ==================== CONFIGURAÇÃO DAS URLs ====================
 # Cole o link normal da sua planilha do Google (onde você visualiza os dados)
