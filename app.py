@@ -1,41 +1,56 @@
 import streamlit as st
 import pandas as pd
+import requests
+import json
 
-# 1. CONFIGURAÇÃO DA PÁGINA (Deve ser o primeiro comando)
+# 1. CONFIGURAÇÃO DA PÁGINA (Deve ser o primeiro comando Streamlit)
 st.set_page_config(page_title="Planejador de Ambientes", page_icon="🏠", layout="wide")
 
 st.title("📋 Planejador Compartilhado: Balanço de Bens & Compras Futuras")
 st.write("Sincronizado em tempo real. Edite pelo smartphone, tablet ou desktop!")
 
-# ==================== CONEXÃO COM O GOOGLE SHEETS ===================
-# IMPORTANTE: Cole aqui a URL de compartilhamento da sua planilha (Configurada como EDITOR)
+# ==================== CONFIGURAÇÃO DAS URLs ====================
+# Cole o link normal da sua planilha do Google (onde você visualiza os dados)
 URL_PLANILHA = "https://docs.google.com/spreadsheets/d/1aDOYJWNtb5lE183WoCJGMZae_OMyttRf7yK9WCa3ibQ/edit?gid=0#gid=0"
 
+# Cole o link do App da Web que você copiou lá do Google Apps Script (Passo 1)
+URL_API_GOOGLE = "https://script.google.com/macros/s/AKfycbwphg1nMavGitbVu3eRQnFsXm9LsCLbr0xTR1qAPjF7p1MwkN58NyfeorckbEtPkgIZwQ/exec"
+# ===============================================================
+
+# Função para buscar dados do Sheets via exportação CSV (Leitura rápida)
 def carregar_dados_sheets():
     try:
-        # Extrai o ID único da planilha contido na URL do Google
         id_planilha = URL_PLANILHA.split("/d/")[1].split("/")[0]
         url_csv = f"https://docs.google.com/spreadsheets/d/{id_planilha}/export?format=csv"
-        
-        # Lê os dados limpos direto da nuvem usando apenas o pandas nativo
         dados = pd.read_csv(url_csv)
-        
         if dados.empty:
             return pd.DataFrame(columns=["Item", "Categoria", "Status", "Prioridade", "Valor (R$)"])
         return dados
     except Exception as e:
-        st.error(f"Aguardando conexão válida com a planilha: {e}")
         return pd.DataFrame(columns=["Item", "Categoria", "Status", "Prioridade", "Valor (R$)"])
 
-# Gerencia o estado dos dados na sessão
-if "meus_itens" not in st.session_state or st.sidebar.button("🔄 Forçar Sincronização"):
+# Função para enviar a tabela inteira atualizada para o Google Sheets (Gravação rápida)
+def salvar_dados_sheets(dataframe_atual):
+    if URL_API_GOOGLE and "COLE_A_URL" not in URL_API_GOOGLE:
+        try:
+            # Transforma o DataFrame em formato JSON adequado para o Google
+            dados_json = dataframe_atual.to_dict(orient="records")
+            # Envia os dados via requisição POST para o Apps Script
+            resposta = requests.post(URL_API_GOOGLE, data=json.dumps(dados_json), headers={"Content-Type": "application/json"})
+            if resposta.status_code == 200:
+                return True
+        except:
+            pass
+    return False
+
+# Inicializa ou sincroniza os dados na sessão
+if "meus_itens" not in st.session_state or st.sidebar.button("🔄 Sincronizar Dados"):
     st.session_state.meus_itens = carregar_dados_sheets()
 
 df = st.session_state.meus_itens
 
 if not df.empty and "Valor (R$)" in df.columns:
     df["Valor (R$)"] = pd.to_numeric(df["Valor (R$)"], errors='coerce').fillna(0.0)
-# =====================================================================
 
 # 2. BARRA LATERAL: CADASTRO DE NOVOS ITENS
 st.sidebar.header("➕ Cadastrar Novo Item")
@@ -55,9 +70,17 @@ if botao_salvar and nome_item:
         "Prioridade": prioridade if status == "Desejo Futuro" else "N/A",
         "Valor (R$)": valor
     }])
-    st.session_state.meus_itens = pd.concat([df, novo_item], ignore_index=True)
-    st.sidebar.success(f"'{nome_item}' adicionado à visualização!")
-    st.rerun()
+    # Junta o novo item à tabela existente
+    df_novo = pd.concat([df, novo_item], ignore_index=True)
+    
+    # Grava na nuvem instantaneamente
+    with st.spinner("Gravando no Google Sheets..."):
+        if salvar_dados_sheets(df_novo):
+            st.session_state.meus_itens = df_novo
+            st.sidebar.success(f"'{nome_item}' salvo no Google!")
+            st.rerun()
+        else:
+            st.sidebar.error("Erro ao salvar na nuvem. Verifique a URL do Script.")
 
 # 3. PAINEL DE INDICADORES (DASHBOARD)
 if not df.empty:
@@ -79,8 +102,9 @@ if not df.empty:
     st.progress(porcentagem_concluida)
     st.divider()
 
-    # 4. GERENCIADOR ESTILO EXCEL
+    # 4. GERENCIADOR ESTILO EXCEL COM AUTO-SALVAMENTO
     st.markdown("### ✏️ Visualizar e Modificar Lista Geral")
+    st.caption("Qualquer alteração feita nas células abaixo será salva na planilha do Google assim que você clicar fora da tabela.")
     
     config_colunas = {
         "Categoria": st.column_config.SelectboxColumn("Cômodo", options=["Sala", "Cozinha", "Banheiro", "Quarto", "Geral"], required=True),
@@ -91,10 +115,15 @@ if not df.empty:
 
     df_editado = st.data_editor(df, use_container_width=True, num_rows="dynamic", column_config=config_colunas, key="editor_bens")
 
+    # Se houver edição direta na tabela na tela, dispara o salvamento automático no Google
     if not df_editado.equals(df):
-        st.session_state.meus_itens = df_editado
-        st.success("Alterações aplicadas com sucesso no painel!")
-        st.rerun()
+        with st.spinner("Sincronizando alterações com o Google..."):
+            if salvar_dados_sheets(df_editado):
+                st.session_state.meus_itens = df_editado
+                st.toast("Planilha Google atualizada!", icon="☁️")
+                st.rerun()
+            else:
+                st.error("Falha ao sincronizar edições automáticas.")
 
     st.divider()
     
