@@ -1,4 +1,0 @@
-streamlit
-st-theme
-st-data-editor
-protobuf==4.25.3
