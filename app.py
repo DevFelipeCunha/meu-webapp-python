@@ -1,63 +1,42 @@
 import streamlit as st
 import pandas as pd
+from streamlit_gsheets import GSheetsConnection
 
 # 1. Configuração da Página
 st.set_page_config(page_title="Planejador de Ambientes", page_icon="🏠", layout="wide")
 
 st.title("📋 Planejador Compartilhado: Balanço de Bens & Compras Futuras")
-st.write("Sincronizado em tempo real. Edite as informações e acompanhe pelo smartphone, tablet ou desktop!")
+st.write("Sincronizado em tempo real com o Google Sheets. Funciona em Smartphone, Tablet e PC!")
 
 # ================= CONEXÃO COM O GOOGLE SHEETS =================
-# Cole aqui o link da sua planilha do Google que você configurou como EDITORA
-URL_PLANILHA = "https://docs.google.com/spreadsheets/d/1aDOYJWNtb5lE183WoCJGMZae_OMyttRf7yK9WCa3ibQ/edit?gid=0#gid=0"
+# Cole aqui a URL de compartilhamento da sua planilha (aquela que configuramos como EDITOR)
+URL_PLANILHA = "https://docs.google.com/spreadsheets/d/1aDOYJWNtb5lE183WoCJGMZae_OMyttRf7yK9WCa3ibQ/edit?gid=0#gid=0
+"
 
-# Função para converter o link normal em um link de exportação de dados
-def obter_url_csv(url):
+# Inicializa a conexão oficial do Streamlit com o Sheets
+conn = st.connection("gsheets", type=GSheetsConnection)
+
+# Função para buscar dados atualizados da nuvem
+def carregar_dados_sheets():
     try:
-        id_planilha = url.split("/d/")[1].split("/")[0]
-        return f"https://docs.google.com/spreadsheets/d/{id_planilha}/export?format=csv"
-    except:
-        return None
-
-URL_CSV = obter_url_csv(URL_PLANILHA)
-
-# Função para carregar os dados direto da nuvem do Google
-def carregar_dados_nuvem():
-    if URL_CSV:
-        try:
-            # O st.cache_data com ttl=2 força o app a buscar dados novos a cada 2 segundos se houver recarga
-            return pd.read_csv(URL_CSV)
-        except Exception as e:
-            st.error(f"Erro ao conectar com a planilha: {e}")
-            return pd.DataFrame(columns=["Item", "Categoria", "Status", "Prioridade", "Valor (R$)"])
-    else:
-        st.warning("Por favor, configure o link correto da sua Planilha do Google no código.")
+        # Lê os dados da planilha pública usando a URL fornecida
+        return conn.read(spreadsheet=URL_PLANILHA, ttl="0d")
+    except Exception as e:
+        # Se a planilha estiver vazia ou der erro, retorna a estrutura padrão
         return pd.DataFrame(columns=["Item", "Categoria", "Status", "Prioridade", "Valor (R$)"])
 
-# Função para salvar os dados de volta na Planilha do Google usando uma requisição simples
-def salvar_dados_nuvem(df_para_salvar):
-    try:
-        import requests
-        id_planilha = URL_PLANILHA.split("/d/")[1].split("/")[0]
-        
-        # Como estamos usando um método simples sem contas de serviço complexas do Google Cloud,
-        # a melhor abordagem para atualizar via código mantendo 100% online e gratuito
-        # é usar a biblioteca gspread ou salvar localmente enquanto preparamos o deploy oficial.
-        # Para testarmos agora, ele salvará as alterações na sessão atual:
-        st.session_state.meus_itens = df_para_salvar
-    except:
-        pass
+# Carrega os dados para a sessão atual
+if "meus_itens" not in st.session_state or st.sidebar.button("🔄 Forçar Sincronização"):
+    st.session_state.meus_itens = carregar_dados_sheets()
 
-# Inicializa os dados buscando da planilha online
-if "meus_itens" not in st.session_state:
-    st.session_state.meus_itens = carregar_dados_nuvem()
+df = st.session_state.meus_itens
 
-# Botão manual de sincronização no topo para forçar a atualização entre os dois usuários
-if st.button("🔄 Sincronizar e Atualizar Dados Agora"):
-    st.session_state.meus_itens = carregar_dados_nuvem()
-    st.rerun()
+# Garantir que as colunas estejam com os tipos corretos
+if not df.empty:
+    df["Valor (R$)"] = pd.to_numeric(df["Valor (R$)"], errors='coerce').fillna(0.0)
+# ===============================================================
 
-# 3. Barra Lateral para Cadastro de Novos Itens
+# 2. Barra Lateral para Cadastro de Novos Itens
 st.sidebar.header("➕ Cadastrar Novo Item")
 with st.sidebar.form(key="form_cadastro", clear_on_submit=True):
     nome_item = st.text_input("Nome do Item:", placeholder="Ex: Sofá, Geladeira...")
@@ -77,18 +56,23 @@ if botao_salvar and nome_item:
         "Valor (R$)": valor
     }])
     
-    # Adiciona o item e simula a atualização
-    st.session_state.meus_itens = pd.concat([st.session_state.meus_itens, novo_item], ignore_index=True)
-    st.sidebar.success(f"'{nome_item}' adicionado à lista!")
-    st.rerun()
+    # Junta o novo item ao banco de dados existente
+    df_atualizado = pd.concat([df, novo_item], ignore_index=True)
+    
+    try:
+        # GRAVA DE FATO NA PLANILHA DO GOOGLE
+        conn.update(spreadsheet=URL_PLANILHA, data=df_atualizado)
+        st.session_state.meus_itens = df_atualizado
+        st.sidebar.success(f"'{nome_item}' gravado no Google Sheets!")
+        st.rerun()
+    except Exception as e:
+        st.sidebar.error(f"Erro ao salvar: {e}. Verifique se a planilha está configurada como 'Editor' para qualquer pessoa com o link.")
 
-# 4. Cálculos e Painel de Indicadores
-df = st.session_state.meus_itens
-
+# 3. Cálculos e Painel de Indicadores (Dashboard)
 if not df.empty:
-    total_possuo = pd.to_numeric(df["Valor (R$)"], errors='coerce').sum()
-    total_desejo = pd.to_numeric(df[df["Status"] == "Desejo Futuro"]["Valor (R$)"], errors='coerce').sum()
-    total_geral = pd.to_numeric(df["Valor (R$)"], errors='coerce').sum()
+    total_possuo = df[df["Status"] == "Já Possuo"]["Valor (R$)"].sum()
+    total_desejo = df[df["Status"] == "Desejo Futuro"]["Valor (R$)"].sum()
+    total_geral = df["Valor (R$)"].sum()
     
     qtd_possuo = len(df[df["Status"] == "Já Possuo"])
     qtd_total = len(df)
@@ -98,13 +82,13 @@ if not df.empty:
     
     col1, col2, col3 = st.columns(3)
     col1.metric(label="💰 Já Investido (Bens Atuais)", value=f"R$ {total_possuo:,.2f}")
-    col2.metric(label="🎯 Orçamento Necessário", value=f"R$ {total_desejo:,.2f}")
+    col2.metric(label="🎯 Orçamento Necessário (Desejos)", value=f"R$ {total_desejo:,.2f}")
     col3.metric(label="📦 Progresso do Projeto", value=f"{qtd_possuo} de {qtd_total} itens", delta=f"{porcentagem_concluida:.1%}")
     
     st.progress(porcentagem_concluida)
     st.divider()
 
-    # Gráficos
+    # Gráficos Dinâmicos
     with st.expander("📊 Clique aqui para abrir os Gráficos do Projeto", expanded=False):
         col_graf1, col_graf2 = st.columns(2)
         with col_graf1:
@@ -118,8 +102,10 @@ if not df.empty:
 
     st.divider()
 
-    # Planilha de Edição
+    # Planilha de Edição e Exclusão Simultânea
     st.markdown("### ✏️ Visualizar e Editar Lista")
+    st.caption("Qualquer alteração feita abaixo ou linhas deletadas serão sincronizadas na planilha ao clicar fora da tabela.")
+    
     config_colunas = {
         "Categoria": st.column_config.SelectboxColumn("Cômodo", options=["Sala", "Cozinha", "Banheiro", "Quarto", "Geral"], required=True),
         "Status": st.column_config.SelectboxColumn("Status", options=["Já Possuo", "Desejo Futuro"], required=True),
@@ -135,9 +121,14 @@ if not df.empty:
         key="editor_bens_desejos"
     )
 
+    # Se você alterar algo na tabela da tela, envia a alteração de volta pro Google Sheets
     if not df_editado.equals(df):
-        st.session_state.meus_itens = df_editado
-        st.success("Alterações aplicadas na tela!")
-        st.rerun()
+        try:
+            conn.update(spreadsheet=URL_PLANILHA, data=df_editado)
+            st.session_state.meus_itens = df_editado
+            st.success("Planilha Google Sheets atualizada com sucesso!")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Erro ao salvar edição: {e}")
 else:
     st.info("👋 Use a barra lateral esquerda para cadastrar seus primeiros itens!")
