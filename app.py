@@ -7,7 +7,7 @@ st.set_page_config(page_title="Planejador de Ambientes", page_icon="🏠", layou
 st.title("📋 Planejador Compartilhado: Balanço de Bens & Compras Futuras")
 st.write("Sincronizado em tempo real. Edite pelo smartphone, tablet ou desktop!")
 
-# ==================== CONEXÃO COM O GOOGLE SHEETS ====================
+# ==================== CONEXÃO COM O GOOGLE SHEETS ===================
 # IMPORTANTE: Cole aqui a URL de compartilhamento da sua planilha (Configurada como EDITOR)
 URL_PLANILHA = "https://docs.google.com/spreadsheets/d/1aDOYJWNtb5lE183WoCJGMZae_OMyttRf7yK9WCa3ibQ/edit?gid=0#gid=0"
 
