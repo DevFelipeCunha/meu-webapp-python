@@ -13,7 +13,7 @@ st.write("Sincronizado em tempo real. Edite pelo smartphone, tablet ou desktop!"
 # Cole o link normal da sua planilha do Google (onde você visualiza os dados)
 URL_PLANILHA = "https://docs.google.com/spreadsheets/d/1aDOYJWNtb5lE183WoCJGMZae_OMyttRf7yK9WCa3ibQ/edit?gid=0#gid=0"
 
-# Cole o link do App da Web que você copiou lá do Google Apps Script (Passo 1)
+# Cole o link do App da Web que você copiou lá do Google Apps Script
 URL_API_GOOGLE = "https://script.google.com/macros/s/AKfycbwphg1nMavGitbVu3eRQnFsXm9LsCLbr0xTR1qAPjF7p1MwkN58NyfeorckbEtPkgIZwQ/exec"
 # ===============================================================
 
@@ -33,9 +33,7 @@ def carregar_dados_sheets():
 def salvar_dados_sheets(dataframe_atual):
     if URL_API_GOOGLE and "COLE_A_URL" not in URL_API_GOOGLE:
         try:
-            # Transforma o DataFrame em formato JSON adequado para o Google
             dados_json = dataframe_atual.to_dict(orient="records")
-            # Envia os dados via requisição POST para o Apps Script
             resposta = requests.post(URL_API_GOOGLE, data=json.dumps(dados_json), headers={"Content-Type": "application/json"})
             if resposta.status_code == 200:
                 return True
@@ -70,10 +68,8 @@ if botao_salvar and nome_item:
         "Prioridade": prioridade if status == "Desejo Futuro" else "N/A",
         "Valor (R$)": valor
     }])
-    # Junta o novo item à tabela existente
     df_novo = pd.concat([df, novo_item], ignore_index=True)
     
-    # Grava na nuvem instantaneamente
     with st.spinner("Gravando no Google Sheets..."):
         if salvar_dados_sheets(df_novo):
             st.session_state.meus_itens = df_novo
@@ -102,6 +98,26 @@ if not df.empty:
     st.progress(porcentagem_concluida)
     st.divider()
 
+    # ==================== SEÇÃO DE GRÁFICOS (RETORNADA) ====================
+    with st.expander("📊 Clique aqui para abrir os Gráficos do Projeto", expanded=False):
+        col_graf1, col_graf2 = st.columns(2)
+        
+        with col_graf1:
+            st.markdown("**Valores Totais Acumulados por Cômodo (R$)**")
+            df_gasto_comodo = df.groupby("Categoria")["Valor (R$)"].sum()
+            st.bar_chart(df_gasto_comodo, color="#2E8B57")
+            
+        with col_graf2:
+            st.markdown("**Resumo de Itens Cadastrados**")
+            df_status_qtd = df.groupby("Status").size().reset_index(name="Quantidade")
+            st.dataframe(df_status_qtd, use_container_width=True, hide_index=True)
+            
+            valor_medio = df["Valor (R$)"].mean()
+            st.info(f"💡 Custo médio estimado por item na sua lista: **R$ {valor_medio:,.2f}**")
+
+    st.divider()
+    # =======================================================================
+
     # 4. GERENCIADOR ESTILO EXCEL COM AUTO-SALVAMENTO
     st.markdown("### ✏️ Visualizar e Modificar Lista Geral")
     st.caption("Qualquer alteração feita nas células abaixo será salva na planilha do Google assim que você clicar fora da tabela.")
@@ -120,7 +136,7 @@ if not df.empty:
         with st.spinner("Sincronizando alterações com o Google..."):
             if salvar_dados_sheets(df_editado):
                 st.session_state.meus_itens = df_editado
-                st.toast("Planilha Google atualizada!", icon="☁️")
+                st.toast("Planilha Google updated!", icon="☁️")
                 st.rerun()
             else:
                 st.error("Falha ao sincronizar edições automáticas.")
